@@ -1660,6 +1660,22 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 	for i := range currentRDListByOwner.Items {
 		rd := currentRDListByOwner.Items[i]
 
+		pvcName := rd.Name
+		pvc := &corev1.PersistentVolumeClaim{}
+		if err := v.client.Get(v.ctx, client.ObjectKey{Name: pvcName, Namespace: rd.Namespace}, pvc); err != nil {
+			if errors.IsNotFound(err) {
+				v.log.Info("PVC deleted - removing orphan RD", "pvc", pvcName)
+				v.DeleteRD(rd.Name, rd.Namespace, true)
+				continue
+			}
+		}
+
+		if pvc.Labels[util.ConsistencyGroupLabel] == "" {
+			v.log.Info("CG label removed - cleaning RD", "pvc", pvcName)
+			v.DeleteRD(rd.GetName(), rd.GetNamespace(), true)
+			continue
+		}
+
 		foundInSpecList := false
 		cgName := ""
 

@@ -870,7 +870,13 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 	cg, ok := pvc.Labels[util.ConsistencyGroupLabel]
 	if ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
 		// At this moment, we don't support unprotecting CG PVCs.
-		log.Info("Unprotecting CG PVCs is not supported", "PVC", pvc.Name)
+		log.Info("Unprotecting CG PVCs is supported", "PVC", pvc.Name)
+
+		// CG-specific: Remove CG label and RS
+		if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc); err != nil {
+			log.Error(err, "Failed to cleanup VolSync PVC")
+			return
+		}
 
 		if err := markRGSResourceForDeletion(v.ctx, v.reconciler.Client, cg, pvc.Namespace); err != nil {
 			log.Error(err, "Failed to mark RGS for deletion", "CG", cg, "PVC", pvc.Name)
@@ -1104,4 +1110,23 @@ func cleanupRGSMarkedForDeletion(
 	}
 
 	return true, nil
+}
+
+// RemovePVCFromCG safely removes PVC from CephFS CG by deleting CG label
+func RemovePVCFromCG(ctx context.Context, c client.Client, pvcName, namespace, cgName string) error {
+	pvc := &corev1.PersistentVolumeClaim{}
+	key := client.ObjectKey{Name: pvcName, Namespace: namespace}
+
+	if err := c.Get(ctx, key, pvc); err != nil {
+		return fmt.Errorf("failed to get PVC %s/%s: %w", namespace, pvcName, err)
+	}
+
+	if pvc.Labels != nil {
+		delete(pvc.Labels, util.ConsistencyGroupLabel)
+		if err := c.Update(ctx, pvc); err != nil {
+			return fmt.Errorf("failed to remove CG label from PVC %s/%s: %w", namespace, pvcName, err)
+		}
+	}
+
+	return nil
 }
