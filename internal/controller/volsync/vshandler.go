@@ -3109,6 +3109,7 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error
 		DeleteLabel(VolSyncDoNotDeleteLabel).
 		DeleteLabel(util.LabelOwnerName).
 		DeleteLabel(util.LabelOwnerNamespaceName).
+		DeleteLabel(util.ConsistencyGroupLabel).
 		DeleteLabel(util.CreatedByRamenLabel).
 		RemoveFinalizer(PVCFinalizerProtected).
 		RemoveOwner(v.owner, v.client.Scheme()).
