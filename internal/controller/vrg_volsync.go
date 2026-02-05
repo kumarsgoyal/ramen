@@ -207,8 +207,14 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		}
 
 		deleted, err := cleanupRGSMarkedForDeletion(v.ctx, v.reconciler.Client, cg, pvc.GetNamespace(), v.log)
+		if err != nil {
+			v.log.Error(err, "Failed to cleanup ReplicationGroupSource marked for deletion")
+			return true // requeue
+		}
 		// If the ReplicationGroupSource is marked for deletion, we will not be able to proceed with the reconciliation
-		if err != nil || deleted {
+		if deleted {
+			v.log.Info("ReplicationGroupSource marked for deletion. We'll retry later.")
+
 			return true // requeue
 		}
 
@@ -854,6 +860,12 @@ func (v *VRGInstance) pvcUnprotectVolSyncIfDeleted(
 	return true
 }
 
+func (v *VRGInstance) pvcsUnprotectVolSync(pvcs []corev1.PersistentVolumeClaim) {
+	for idx := range pvcs {
+		v.pvcUnprotectVolSync(pvcs[idx], v.log)
+	}
+}
+
 func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
 	if !v.ramenConfig.VolumeUnprotectionEnabled {
 		log.Info("Volume unprotection disabled")
@@ -863,32 +875,22 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 
 	cg, ok := pvc.Labels[util.ConsistencyGroupLabel]
 	if ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
-		log.Info("Unprotecting CG VolSync PVC", "PVC", pvc.Name, "CG", cg)
-
-		// This call is only from Primary cluster. delete ReplicationSource and related resources.
-		if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc); err != nil {
-			log.Error(err, "Failed to cleanup VolSync PVC")
-			return
-		}
+		log.Info("PVC has CG label. Deleting RGD in order to rebuild a new list", "Labels", pvc.Labels)
 
 		if err := markRGSResourceForDeletion(v.ctx, v.reconciler.Client, cg, pvc.Namespace); err != nil {
 			log.Error(err, "Failed to mark RGS for deletion", "CG", cg)
 			return
 		}
-
-		// Remove the PVC from VRG status
-		v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
-
-		return
 	}
 
 	log.Info("Unprotecting VolSync PVC", "PVC", pvc.Name)
-	// This call is only from Primary cluster. delete ReplicationSource and related resources.
+	// This call is only from Primary cluster. delete ReplicationSource/CG and related resources.
 	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc); err != nil {
 		log.Error(err, "Failed to unprotect VolSync PVC", "PVC", pvc.Name)
 
 		return
 	}
+
 	// Remove the PVC from VRG status
 	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }
