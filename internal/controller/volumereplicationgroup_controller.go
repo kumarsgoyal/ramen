@@ -1030,19 +1030,19 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 //nolint:cyclop,funlen,nestif,gocognit
 func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alpha1.PeerClass,
 	storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim,
-) error {
+) (bool, error) {
 	v.log.Info("separate PVC using peerClasses")
 
 	peerClass, err := v.findPeerClassMatchingSC(storageClass, peerClasses, pvc)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if peerClass == nil {
 		msg := fmt.Sprintf("peerClass matching storageClass %s not found for async PVC", storageClass.GetName())
 		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonPeerClassNotFound, msg)
 
-		return errors.New(msg)
+		return false, errors.New(msg)
 	}
 
 	pvcEnabledForVolSync := util.IsPVCMarkedForVolSync(v.instance.GetAnnotations())
@@ -1054,32 +1054,32 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 				// label VolRep PVCs if peerClass.grouping is enabled
 				if peerClass.Grouping {
 					if err := v.addVolRepConsistencyGroupLabel(pvc); err != nil {
-						return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
+						return false, fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
 							pvc.GetNamespace(), pvc.GetName(), err)
 					}
 				}
 
 				v.volRepPVCs = append(v.volRepPVCs, *pvc)
 
-				return nil
+				return false, nil
 			}
 
-			return fmt.Errorf("failed to find replicationClass matching peerClass for PVC %s/%s",
+			return false, fmt.Errorf("failed to find replicationClass matching peerClass for PVC %s/%s",
 				pvc.Namespace, pvc.Name)
 		}
 	}
 
 	if v.instance.Spec.VolSync.Disabled {
-		return fmt.Errorf("failed to find matching peerClass for PVC and VolSync is disabled")
+		return false, fmt.Errorf("failed to find matching peerClass for PVC and VolSync is disabled")
 	}
 
 	snapClass, err := v.findVolSnapClass(storageClass)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if snapClass == nil {
-		return fmt.Errorf("failed to find snapshotClass for PVC %s/%s", pvc.Namespace, pvc.Name)
+		return false, fmt.Errorf("failed to find snapshotClass for PVC %s/%s", pvc.Namespace, pvc.Name)
 	}
 
 	// label VolSync PVCs if peerClass.grouping is enabled
@@ -1088,23 +1088,24 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 			v.log.Info(fmt.Sprintf("Skipping consistency group label for deleted PVC %s/%s",
 				pvc.GetNamespace(), pvc.GetName()))
 
-			return nil
+			return true, nil
 		}
 
 		if err := v.addConsistencyGroupLabel(pvc); err != nil {
-			return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
+			return false, fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
 				pvc.GetNamespace(), pvc.GetName(), err)
 		}
 	}
 
 	v.volSyncPVCs = append(v.volSyncPVCs, *pvc)
 
-	return nil
+	return false, nil
 }
 
 //nolint:gocognit,cyclop
 func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimList) error {
 	peerClasses := v.instance.Spec.Async.PeerClasses
+	deletedPvcCount := 0
 
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
@@ -1118,9 +1119,13 @@ func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimLis
 		if len(peerClasses) == 0 {
 			v.separatePVCsUsingOnlySC(storageClass, pvc)
 		} else {
-			err = v.separatePVCUsingPeerClassAndSC(peerClasses, storageClass, pvc)
+			deletedPvc, err := v.separatePVCUsingPeerClassAndSC(peerClasses, storageClass, pvc)
 			if err != nil {
 				return err
+			}
+
+			if deletedPvc {
+				deletedPvcCount++
 			}
 		}
 	}
@@ -1128,7 +1133,7 @@ func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimLis
 	v.log.Info(fmt.Sprintf("Found %d PVCs targeted for VolRep and %d targeted for VolSync",
 		len(v.volRepPVCs), len(v.volSyncPVCs)))
 
-	if len(pvcList.Items) != (len(v.volRepPVCs) + len(v.volSyncPVCs)) {
+	if len(pvcList.Items) != (len(v.volRepPVCs) + len(v.volSyncPVCs) + deletedPvcCount) {
 		return fmt.Errorf("no PVCs are procted")
 	}
 
