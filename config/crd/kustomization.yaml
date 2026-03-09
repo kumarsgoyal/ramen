@@ -11,6 +11,8 @@ resources:
 - bases/ramendr.openshift.io_drclusterconfigs.yaml
 - bases/ramendr.openshift.io_replicationgroupdestinations.yaml
 - bases/ramendr.openshift.io_replicationgroupsources.yaml
+- bases/replication.storage.ramen.io_volumegroupreplications.yaml
+- bases/replication.storage.ramen.io_volumegroupreplicationclasses.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

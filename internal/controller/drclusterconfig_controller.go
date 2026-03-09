@@ -14,6 +14,7 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	replicationv1alpha1 "github.com/ramendr/ramen/api/replication/v1alpha1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	"golang.org/x/time/rate"
 	storagev1 "k8s.io/api/storage/v1"
@@ -403,21 +404,34 @@ func (r *DRClusterConfigReconciler) listDRSupportedVRCs(ctx context.Context) ([]
 	return vrcs, nil
 }
 
-// listDRSupportedVGRCs returns a list of VolumeGroupReplicationClasses that are marked as DR supported
+// listDRSupportedVGRCs returns a list of VolumeGroupReplicationClasses(ODF + Ramen) that are marked as DR supported
 func (r *DRClusterConfigReconciler) listDRSupportedVGRCs(ctx context.Context) ([]string, error) {
 	vgrcs := []string{}
 
-	vgrClasses := &volrep.VolumeGroupReplicationClassList{}
-	if err := r.Client.List(ctx, vgrClasses); err != nil {
-		return nil, fmt.Errorf("failed to list VolumeGroupReplicationClasses, %w", err)
+	odfVgrClasses := &volrep.VolumeGroupReplicationClassList{}
+	if err := r.Client.List(ctx, odfVgrClasses); err != nil {
+		return nil, fmt.Errorf("failed to list ODF VolumeGroupReplicationClasses, %w", err)
 	}
 
-	for i := range vgrClasses.Items {
-		if !util.HasLabel(&vgrClasses.Items[i], GroupReplicationIDLabel) {
+	for i := range odfVgrClasses.Items {
+		if !util.HasLabel(&odfVgrClasses.Items[i], GroupReplicationIDLabel) {
 			continue
 		}
 
-		vgrcs = append(vgrcs, vgrClasses.Items[i].Name)
+		vgrcs = append(vgrcs, odfVgrClasses.Items[i].Name)
+	}
+
+	ramenVgrClasses := &replicationv1alpha1.VolumeGroupReplicationClassList{}
+	if err := r.Client.List(ctx, ramenVgrClasses); err != nil {
+		r.Log.Info("No Ramen VolumeGroupReplicationClasses found")
+	}
+
+	for i := range ramenVgrClasses.Items {
+		if !util.HasLabel(&ramenVgrClasses.Items[i], GroupReplicationIDLabel) {
+			continue
+		}
+
+		vgrcs = append(vgrcs, ramenVgrClasses.Items[i].Name)
 	}
 
 	return vgrcs, nil

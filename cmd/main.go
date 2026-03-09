@@ -40,6 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	replicationv1alpha1 "github.com/ramendr/ramen/api/replication/v1alpha1"
 	controllers "github.com/ramendr/ramen/internal/controller"
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
@@ -119,6 +120,7 @@ func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 	} else {
 		utilruntime.Must(velero.AddToScheme(scheme))
 		utilruntime.Must(volrep.AddToScheme(scheme))
+		utilruntime.Must(replicationv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(volsyncv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(snapv1.AddToScheme(scheme))
 		utilruntime.Must(groupsnapv1beta1.AddToScheme(scheme))

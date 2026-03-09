@@ -362,6 +362,34 @@ rules:
   - update
   - watch
 - apiGroups:
+  - replication.storage.ramen.io
+  resources:
+  - volumegroupreplicationclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - replication.storage.ramen.io
+  resources:
+  - volumegroupreplications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - replication.storage.ramen.io
+  resources:
+  - volumegroupreplications/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - snapshot.storage.k8s.io
   resources:
   - volumesnapshotclasses
