@@ -892,6 +892,14 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 
 		return
 	}
+
+	log.Info("Removing do-not-delete annotation protection", "PVC", pvc.Name)
+	if err := util.NewResourceUpdater(&pvc).
+		DeleteAnnotation(volsync.ACMAppSubDoNotDeleteAnnotation).
+		Update(v.ctx, v.reconciler.Client); err != nil {
+		log.Error(err, "Failed to remove do-not-delete annotation", "PVC", pvc.Name)
+	}
+
 	// Remove the PVC from VRG status
 	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }
